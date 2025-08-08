@@ -1,0 +1,1 @@
+# nrf-mpu9250-spi-communication
