@@ -8,22 +8,12 @@
 LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
 /* HW selection (matches your DTS) */
-#define MPU9250_SPI_LABEL DT_NODELABEL(spi1)
-#define SPI_GPIO DT_NODELABEL(gpio0)
-#define SPI_GPIO_CS 25
 #define WHO_AM_I_REG 0x75
 #define WHO_AM_I_EXPECT 0x71
 #define GYRO_XOUT_H 0x43
 
-static const struct device *mpu9250_dev = DEVICE_DT_GET(MPU9250_SPI_LABEL);
-static const struct device *gpio_dev = DEVICE_DT_GET(SPI_GPIO);
-
-static struct spi_config spi_cfg = {
-    .frequency = 1000000U, /* 1 MHz is fine; you can start lower */
-    .operation = SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_WORD_SET(8),
-    .slave = 0, /* nRF SPIM ignores this when you do manual CS */
-    .cs = NULL, /* we toggle CS via GPIO */
-};
+#define SPI_OPERATION SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_WORD_SET(8)
+static const struct spi_dt_spec mpu9250_dev = SPI_DT_SPEC_GET(DT_NODELABEL(mpu9250), SPI_OPERATION, 0);
 
 /* Multi-byte read: keeps CS low across address + data */
 static int mpu9250_read_regs(uint8_t start_reg, uint8_t *dst, size_t len)
@@ -31,40 +21,34 @@ static int mpu9250_read_regs(uint8_t start_reg, uint8_t *dst, size_t len)
   if (!len)
     return -EINVAL;
 
-  int err;
-  uint8_t addr = start_reg | 0x80; /* set READ bit (MSB) */
+  uint8_t tx[1 + len];
+  uint8_t rx[1 + len];
 
-  struct spi_buf tx_bufs[] = {{.buf = &addr, .len = 1}};
-  struct spi_buf_set tx = {.buffers = tx_bufs, .count = 1};
+  tx[0] = start_reg | 0x80;  // READ bit
+  memset(&tx[1], 0xFF, len); // dummy bytes to clock data out
 
-  struct spi_buf rx_bufs[] = {{.buf = dst, .len = len}};
-  struct spi_buf_set rx = {.buffers = rx_bufs, .count = 1};
+  struct spi_buf txb = {.buf = tx, .len = sizeof(tx)};
+  struct spi_buf rxb = {.buf = rx, .len = sizeof(rx)};
+  struct spi_buf_set txset = {.buffers = &txb, .count = 1};
+  struct spi_buf_set rxset = {.buffers = &rxb, .count = 1};
 
-  /* Assert CS for the whole transaction (address then data) */
-  gpio_pin_set(gpio_dev, SPI_GPIO_CS, 0);
-  err = spi_write(mpu9250_dev, &spi_cfg, &tx);
-  if (err == 0)
-  {
-    err = spi_read(mpu9250_dev, &spi_cfg, &rx);
-  }
-  gpio_pin_set(gpio_dev, SPI_GPIO_CS, 1);
+  int err = spi_transceive_dt(&mpu9250_dev, &txset, &rxset);
+  if (err)
+    return err;
 
-  return err;
+  memcpy(dst, &rx[1], len); // skip the first (garbage) byte
+  return 0;
 }
 
 int main(void)
 {
-  LOG_INF("Starting MPU-9250 manual SPI test (burst-capable)");
+  LOG_INF("Starting MPU-9250 SPI test");
 
-  if (!device_is_ready(mpu9250_dev) || !device_is_ready(gpio_dev))
+  if (!spi_is_ready_dt(&mpu9250_dev))
   {
-    LOG_ERR("Device not ready");
+    LOG_ERR("MPU-9250 not ready");
     return -ENODEV;
   }
-
-  /* Configure CS pin and deassert (high) */
-  gpio_pin_configure(gpio_dev, SPI_GPIO_CS, GPIO_OUTPUT);
-  gpio_pin_set(gpio_dev, SPI_GPIO_CS, 1);
 
   /* 1-byte example: WHO_AM_I */
   uint8_t who = 0;

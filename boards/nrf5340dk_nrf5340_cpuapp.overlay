@@ -9,6 +9,11 @@
   pinctrl-1 = <&spi1_sleep>;
   pinctrl-names = "default", "sleep";
   cs-gpios = <&gpio0 25 GPIO_ACTIVE_LOW>;
+  mpu9250: spi-device@0 {
+    compatible = "custom,mpu9250-spi";
+    reg = <0>;
+    spi-max-frequency = <1000000>;
+  };
 };
 
 &pinctrl {
