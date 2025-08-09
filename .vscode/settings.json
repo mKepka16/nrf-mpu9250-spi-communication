@@ -1,0 +1,11 @@
+{
+  "files.associations": {
+    "*.tmpl": "html",
+    "*.sql": "sql",
+    "log.h": "c",
+    "gpio.h": "c",
+    "devicetree.h": "c",
+    "spi.h": "c",
+    "device.h": "c"
+  }
+}
